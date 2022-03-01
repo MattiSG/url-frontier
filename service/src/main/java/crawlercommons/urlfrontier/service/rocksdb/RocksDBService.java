@@ -179,9 +179,8 @@ public class RocksDBService extends AbstractFrontierService implements Closeable
             for (rocksIterator.seekToFirst(); rocksIterator.isValid(); rocksIterator.next()) {
                 final String currentKey = new String(rocksIterator.key(), StandardCharsets.UTF_8);
                 final QueueWithinCrawl qk = parseAndDeNormalise(currentKey);
-                QueueMetadata queueMD =
-                        (QueueMetadata) queues.computeIfAbsent(qk, s -> new QueueMetadata());
-                queueMD.incrementActive();
+                queues.putIfAbsent(qk, new QueueMetadata());
+                ((QueueMetadata) queues.get(qk)).incrementActive();
             }
         }
 
@@ -208,15 +207,14 @@ public class RocksDBService extends AbstractFrontierService implements Closeable
 
                 // queue might not exist if it had nothing scheduled for it
                 // i.e. all done
-                QueueMetadata queueMD =
-                        (QueueMetadata) queues.computeIfAbsent(Qkey, s -> new QueueMetadata());
+                queues.putIfAbsent(Qkey, new QueueMetadata());
 
                 // check the value - if it is an empty byte array it means that the URL has been
                 // processed and is not scheduled
                 // otherwise it is scheduled
                 boolean done = rocksIterator.value().length == 0;
                 if (done) {
-                    queueMD.incrementCompleted();
+                    ((QueueMetadata) queues.get(Qkey)).incrementActive();
                 } else {
                     // double check the number of scheduled later on
                     numScheduled++;
@@ -382,8 +380,12 @@ public class RocksDBService extends AbstractFrontierService implements Closeable
                 }
 
                 // get the priority queue or create one
-                QueueMetadata queueMD =
-                        (QueueMetadata) queues.computeIfAbsent(qk, s -> new QueueMetadata());
+                QueueMetadata queueMD = new QueueMetadata();
+                QueueMetadata previous = (QueueMetadata) queues.putIfAbsent(qk, queueMD);
+                if (previous != null) {
+                    queueMD = previous;
+                }
+
                 try {
                     // known - remove from queues
                     // its key in the queues was stored in the default cf
@@ -469,7 +471,7 @@ public class RocksDBService extends AbstractFrontierService implements Closeable
         queuesBeingDeleted.put(qc, qc);
 
         // find the next key by alphabetical order
-        QueueWithinCrawl[] array = queues.keySet().toArray(new QueueWithinCrawl[0]);
+        QueueWithinCrawl[] array = queues.getKeys();
         Arrays.sort(array);
         byte[] startKey = null;
         byte[] endKey = null;
@@ -564,7 +566,7 @@ public class RocksDBService extends AbstractFrontierService implements Closeable
         synchronized (queues) {
 
             // find the crawlIDs
-            QueueWithinCrawl[] array = queues.keySet().toArray(new QueueWithinCrawl[0]);
+            QueueWithinCrawl[] array = queues.getKeys();
             Arrays.sort(array);
 
             byte[] startKey = null;

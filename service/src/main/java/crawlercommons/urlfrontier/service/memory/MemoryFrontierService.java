@@ -121,9 +121,10 @@ public class MemoryFrontierService extends AbstractFrontierService {
 
                 // get the priority queue or create one
                 synchronized (queues) {
-                    URLQueue queue = (URLQueue) queues.get(qk);
+                    URLQueue queue = (URLQueue) queues.putIfAbsent(qk, new URLQueue(iu));
+                    // there was no such queue, creating one also added the URL
+                    // can return
                     if (queue == null) {
-                        queues.put(qk, new URLQueue(iu));
                         // ack reception of the URL
                         responseObserver.onNext(
                                 crawlercommons.urlfrontier.Urlfrontier.String.newBuilder()
